@@ -62,8 +62,9 @@
         </div>
         <div class="assemble-arrow">↓ パリティビットを付加</div>
         <div class="bits-block">
-          <p class="bits-caption">実際に送るデータ</p>
+          <p class="bits-caption">実際に送るデータ（パリティビットの色は方式によって変わる）</p>
           <div class="bit-row" id="p-full-bits"></div>
+          <p class="ones-count" id="p-full-ones"></p>
         </div>
       </article>
 
@@ -106,8 +107,15 @@
         </div>
 
         <div class="bits-block">
-          <p class="bits-caption">受信データ</p>
+          <p class="bits-caption">送信したデータ</p>
+          <div class="bit-row" id="p-sent-bits"></div>
+          <p class="ones-count" id="p-sent-ones"></p>
+        </div>
+
+        <div class="bits-block">
+          <p class="bits-caption">受信データ（送信データと異なるビットは赤色）</p>
           <div class="bit-row" id="p-received-bits"></div>
+          <p class="ones-count" id="p-received-ones"></p>
         </div>
 
         <button class="btn btn-primary" id="p-judge-btn" disabled>受信して判定する</button>
@@ -135,6 +143,10 @@
 
     <!-- ================= MODE B: HAMMING ================= -->
     <section id="hamming-mode" class="mode-panel" aria-hidden="true">
+
+      <div class="note-box">
+        <p>⚠️ ハミング符号が確実に直せるのは<strong>一度に1ビットだけの誤り</strong>。2つ以上のビットが同時に反転すると、検査ビットの組み合わせを見誤り、間違った場所を「訂正」してしまうことがある。</p>
+      </div>
 
       <article class="station" id="h-station-1">
         <div class="station-head">
@@ -165,7 +177,7 @@
         </div>
 
         <div class="bits-block">
-          <p class="bits-caption">符号化されたデータ（D = データビット / 色付き = 検査ビット）</p>
+          <p class="bits-caption">符号化されたデータ（検査ビットはそれぞれ違う色。データビットは自分が属する検査グループの色の枠で囲まれる）</p>
           <div class="bit-row bit-row-code" id="h-code-bits"></div>
         </div>
 
@@ -203,6 +215,15 @@
             <p class="station-desc">それぞれの検査ビットが自分の担当グループを確認する。異常があれば赤く点滅する。</p>
           </div>
         </div>
+        <div class="bits-block">
+          <p class="bits-caption">符号化されたデータ（送信時）</p>
+          <div class="bit-row bit-row-code" id="h-check-original-bits"></div>
+        </div>
+        <div class="bits-block">
+          <p class="bits-caption">ノイズ後の符号化されたデータ（受信）</p>
+          <div class="bit-row bit-row-code" id="h-check-noisy-bits"></div>
+        </div>
+
         <div class="check-list" id="h-check-list"></div>
         <div class="syndrome-box" id="h-syndrome-box" hidden>
           <p>フラグを並べると… <span class="syndrome-bin" id="h-syndrome-bin"></span>（2進数）</p>
@@ -219,8 +240,16 @@
           </div>
         </div>
         <div class="bits-block">
-          <p class="bits-caption">修復後のデータ</p>
+          <p class="bits-caption">ノイズ後の符号化されたデータ</p>
+          <div class="bit-row bit-row-code" id="h-final-noisy-bits"></div>
+        </div>
+        <div class="bits-block">
+          <p class="bits-caption">修復した符号化されたデータ</p>
           <div class="bit-row bit-row-code" id="h-fixed-bits"></div>
+        </div>
+        <div class="bits-block">
+          <p class="bits-caption">最初に送信した符号化されたデータ（比較用）</p>
+          <div class="bit-row bit-row-code" id="h-final-original-bits"></div>
         </div>
         <div class="result-box" id="h-result">
           <p class="result-status">送信スタートを押すと結果がここに表示されます</p>

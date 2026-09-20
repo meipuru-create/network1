@@ -1,15 +1,27 @@
 /* =========================================================
    共通ユーティリティ
    ========================================================= */
-function makeBitCell(value, { input=false, clickable=false, parity=false, flipped=false, ok=false, subLabel=null } = {}) {
+function hexTint(hex, amt = 0.82) {
+  const r = parseInt(hex.slice(1, 3), 16), g = parseInt(hex.slice(3, 5), 16), b = parseInt(hex.slice(5, 7), 16);
+  const mix = c => Math.round(c + (255 - c) * amt);
+  return `rgb(${mix(r)}, ${mix(g)}, ${mix(b)})`;
+}
+
+function makeBitCell(value, opts = {}) {
+  const { input = false, clickable = false, flipped = false, mismatch = false, ok = false, subLabel = null, fillColor = null } = opts;
   const cell = document.createElement('div');
   cell.className = 'bit';
   if (input) cell.classList.add('is-input');
   if (clickable) cell.classList.add('is-clickable');
-  if (parity) cell.classList.add('is-parity');
   if (flipped) cell.classList.add('is-flipped');
+  if (mismatch) cell.classList.add('is-mismatch');
   if (ok) cell.classList.add('is-ok');
   cell.textContent = value;
+  if (fillColor && !flipped && !ok) {
+    cell.style.borderColor = fillColor;
+    cell.style.background = hexTint(fillColor);
+    cell.style.color = fillColor;
+  }
   if (subLabel) {
     const sub = document.createElement('span');
     sub.style.cssText = 'position:absolute;bottom:-18px;left:0;right:0;text-align:center;font-size:10px;font-family:var(--font-mono);color:var(--ink-soft);';
@@ -44,19 +56,17 @@ modeButtons.forEach(b => b.addEventListener('click', () => switchMode(b.dataset.
 /* =========================================================
    モードA：パリティチェック
    ========================================================= */
-const p = {
-  dataBits: [1, 0, 1, 1],
-  parityType: 'even',
-  fullBits: [],
-  channelBits: [],
-  started: false,
-};
+const p = { dataBits: [1, 0, 1, 1], parityType: 'even', fullBits: [], channelBits: [], started: false };
 
 const pBitcountSel = document.getElementById('p-bitcount');
 const pDataBitsEl = document.getElementById('p-data-bits');
 const pFullBitsEl = document.getElementById('p-full-bits');
+const pFullOnesEl = document.getElementById('p-full-ones');
 const pChannelBitsEl = document.getElementById('p-channel-bits');
+const pSentBitsEl = document.getElementById('p-sent-bits');
+const pSentOnesEl = document.getElementById('p-sent-ones');
 const pReceivedBitsEl = document.getElementById('p-received-bits');
+const pReceivedOnesEl = document.getElementById('p-received-ones');
 const pWireFill = document.getElementById('p-wire-fill');
 const pStartBtn = document.getElementById('p-start-btn');
 const pNoiseBtn = document.getElementById('p-noise-btn');
@@ -72,6 +82,28 @@ function computeParityBit(bits, type) {
   const ones = countOnes(bits);
   if (type === 'even') return ones % 2 === 0 ? 0 : 1;
   return ones % 2 === 0 ? 1 : 0;
+}
+
+/** 送信データ一式（データ+パリティ）を1行分描画する。パリティビットは方式ごとの色で塗る。 */
+function pRenderFullRow(container, bits) {
+  container.innerHTML = '';
+  bits.forEach((v, i) => {
+    const isParityPos = i === bits.length - 1;
+    const cell = makeBitCell(v, {});
+    if (isParityPos) cell.classList.add(p.parityType === 'even' ? 'is-parity-even' : 'is-parity-odd');
+    container.appendChild(cell);
+  });
+}
+
+function pRenderReceivedRow() {
+  pReceivedBitsEl.innerHTML = '';
+  p.channelBits.forEach((v, i) => {
+    const isParityPos = i === p.channelBits.length - 1;
+    const differs = v !== p.fullBits[i];
+    const cell = makeBitCell(v, { mismatch: differs });
+    if (isParityPos) cell.classList.add(p.parityType === 'even' ? 'is-parity-even' : 'is-parity-odd');
+    pReceivedBitsEl.appendChild(cell);
+  });
 }
 
 function pRebuildFromBitcount() {
@@ -98,11 +130,14 @@ function pRenderData() {
   const parityBit = computeParityBit(p.dataBits, p.parityType);
   p.fullBits = [...p.dataBits, parityBit];
 
-  pFullBitsEl.innerHTML = '';
-  p.fullBits.forEach((v, i) => {
-    const isParity = i === p.fullBits.length - 1;
-    pFullBitsEl.appendChild(makeBitCell(v, { parity: isParity }));
-  });
+  pRenderFullRow(pFullBitsEl, p.fullBits);
+  pFullOnesEl.textContent = `実際に送るデータの1の数の合計：${countOnes(p.fullBits)} 個`;
+
+  pRenderFullRow(pSentBitsEl, p.fullBits);
+  pSentOnesEl.textContent = `1の数の合計：${countOnes(p.fullBits)} 個`;
+
+  pReceivedBitsEl.innerHTML = '';
+  pReceivedOnesEl.textContent = '1の数の合計：--';
 
   pRenderTradeoff();
 }
@@ -122,6 +157,7 @@ function pResetTransmission() {
   pWireFill.style.width = '0%';
   pChannelBitsEl.innerHTML = '';
   pReceivedBitsEl.innerHTML = '';
+  pReceivedOnesEl.textContent = '1の数の合計：--';
   pStartBtn.disabled = false;
   pNoiseBtn.disabled = true;
   pJudgeBtn.disabled = true;
@@ -181,7 +217,6 @@ document.querySelectorAll('input[name="p-noise-mode"]').forEach(r => r.addEventL
   if (p.started) {
     p.channelBits = [...p.fullBits];
     pRenderChannel();
-    const manual = r.form ? false : false;
     const isManual = document.querySelector('input[name="p-noise-mode"]:checked').value === 'manual';
     pNoiseBtn.disabled = isManual;
     pNoiseHint.textContent = isManual ? '上のビットを直接クリックすると反転します。' : '';
@@ -189,8 +224,10 @@ document.querySelectorAll('input[name="p-noise-mode"]').forEach(r => r.addEventL
 }));
 
 pJudgeBtn.addEventListener('click', () => {
-  pReceivedBitsEl.innerHTML = '';
-  p.channelBits.forEach(v => pReceivedBitsEl.appendChild(makeBitCell(v)));
+  pRenderFullRow(pSentBitsEl, p.fullBits);
+  pSentOnesEl.textContent = `1の数の合計：${countOnes(p.fullBits)} 個`;
+  pRenderReceivedRow();
+  pReceivedOnesEl.textContent = `1の数の合計：${countOnes(p.channelBits)} 個`;
 
   const actualFlips = p.channelBits.reduce((acc, v, i) => acc + (v !== p.fullBits[i] ? 1 : 0), 0);
 
@@ -214,7 +251,7 @@ pToHammingBtn.addEventListener('click', () => {
   hBitcountSel.value = String(p.dataBits.length);
   h.dataBits = [...p.dataBits];
   switchMode('hamming');
-  hRenderAll();
+  hRebuildFromBitcount();
 });
 
 pBitcountSel.addEventListener('change', pRebuildFromBitcount);
@@ -229,6 +266,8 @@ pRebuildFromBitcount();
 /* =========================================================
    モードB：ハミング符号
    ========================================================= */
+const PARITY_COLORS = { 1: '#B8722C', 2: '#3B6E8F', 4: '#7B5EA6', 8: '#8A8F3F', 16: '#4F7942', 32: '#A8484F' };
+
 const h = { dataBits: [1, 0, 1, 1], code: [], n: 0, parityPositions: [], dataPositions: [], channelCode: [], started: false };
 
 const hBitcountSel = document.getElementById('h-bitcount');
@@ -240,11 +279,15 @@ const hWireFill = document.getElementById('h-wire-fill');
 const hStartBtn = document.getElementById('h-start-btn');
 const hResetNoiseBtn = document.getElementById('h-reset-noise-btn');
 const hFlipCountEl = document.getElementById('h-flip-count');
+const hCheckOriginalBitsEl = document.getElementById('h-check-original-bits');
+const hCheckNoisyBitsEl = document.getElementById('h-check-noisy-bits');
 const hCheckList = document.getElementById('h-check-list');
 const hSyndromeBox = document.getElementById('h-syndrome-box');
 const hSyndromeBin = document.getElementById('h-syndrome-bin');
 const hSyndromeDec = document.getElementById('h-syndrome-dec');
+const hFinalNoisyBitsEl = document.getElementById('h-final-noisy-bits');
 const hFixedBitsEl = document.getElementById('h-fixed-bits');
+const hFinalOriginalBitsEl = document.getElementById('h-final-original-bits');
 const hResultBox = document.getElementById('h-result');
 
 function buildHamming(dataBits) {
@@ -281,13 +324,50 @@ function hCheckSyndrome(code, parityPositions, n) {
   return { flags, syndrome };
 }
 
+/** 符号化データを1行分描画する。検査ビットは担当色で塗り、データビットは所属する
+ *  すべての検査グループの色で内側から外側（添え字が小さい順）に枠を重ねて囲む。 */
+function renderEncodedRow(container, code, opts = {}) {
+  const { compareCode = null, clickable = false, onClick = null, correctedPos = null, diffStyle = 'mismatch' } = opts;
+  container.innerHTML = '';
+  for (let pos = 1; pos <= h.n; pos++) {
+    const value = code[pos];
+    const isParityPos = h.parityPositions.includes(pos);
+    const dLabel = isParityPos ? ('P' + pos) : ('D' + (h.dataPositions.indexOf(pos) + 1));
+    const differs = compareCode ? (value !== compareCode[pos]) : false;
+    const corrected = correctedPos === pos;
+
+    const cellOpts = { subLabel: dLabel };
+    if (clickable) cellOpts.clickable = true;
+    if (corrected) cellOpts.ok = true;
+    if (differs && diffStyle === 'flip') cellOpts.flipped = true;
+    if (differs && diffStyle === 'mismatch') cellOpts.mismatch = true;
+    if (isParityPos) cellOpts.fillColor = PARITY_COLORS[pos] || '#666';
+
+    const cell = makeBitCell(value, cellOpts);
+    if (clickable && onClick) cell.addEventListener('click', () => onClick(pos));
+
+    let node = cell;
+    if (!isParityPos) {
+      const groups = h.parityPositions.filter(pp => (pos & pp) !== 0).sort((a, b) => a - b);
+      groups.forEach(pp => {
+        const wrap = document.createElement('div');
+        wrap.className = 'p-frame';
+        wrap.style.borderColor = PARITY_COLORS[pp] || '#666';
+        wrap.appendChild(node);
+        node = wrap;
+      });
+    }
+    container.appendChild(node);
+  }
+}
+
 function hRebuildFromBitcount() {
   const m = parseInt(hBitcountSel.value, 10);
   const next = [];
   for (let i = 0; i < m; i++) next.push(h.dataBits[i] !== undefined ? h.dataBits[i] : (i % 2));
   h.dataBits = next;
-  hResetChannel();
   hRenderAll();
+  hResetChannel();
 }
 
 function hRenderAll() {
@@ -296,8 +376,8 @@ function hRenderAll() {
     const cell = makeBitCell(v, { input: true });
     cell.addEventListener('click', () => {
       h.dataBits[i] = h.dataBits[i] === 1 ? 0 : 1;
-      hResetChannel();
       hRenderAll();
+      hResetChannel();
     });
     hDataBitsEl.appendChild(cell);
   });
@@ -305,13 +385,9 @@ function hRenderAll() {
   const built = buildHamming(h.dataBits);
   h.n = built.n; h.code = built.code; h.parityPositions = built.parityPositions; h.dataPositions = built.dataPositions;
 
-  hCodeBitsEl.innerHTML = '';
-  for (let pos = 1; pos <= h.n; pos++) {
-    const isParity = h.parityPositions.includes(pos);
-    const dLabel = isParity ? ('P' + pos) : ('D' + (h.dataPositions.indexOf(pos) + 1));
-    hCodeBitsEl.appendChild(makeBitCell(h.code[pos], { parity: isParity, subLabel: dLabel }));
-  }
-  hCodeBitsEl.style.marginBottom = '18px';
+  renderEncodedRow(hCodeBitsEl, h.code);
+  renderEncodedRow(hCheckOriginalBitsEl, h.code);
+  renderEncodedRow(hFinalOriginalBitsEl, h.code);
 
   hGroupLegend.innerHTML = '';
   h.parityPositions.forEach(pPos => {
@@ -319,7 +395,13 @@ function hRenderAll() {
     for (let pos = 1; pos <= h.n; pos++) if ((pos & pPos) !== 0) covered.push(pos);
     const item = document.createElement('div');
     item.className = 'group-legend-item';
-    item.textContent = `P${pPos} が担当するグループ：位置 ${covered.join(', ')}`;
+    const swatch = document.createElement('span');
+    swatch.className = 'group-swatch';
+    swatch.style.background = PARITY_COLORS[pPos] || '#666';
+    item.appendChild(swatch);
+    const text = document.createElement('span');
+    text.textContent = `P${pPos} が担当するグループ：位置 ${covered.join(', ')}`;
+    item.appendChild(text);
     hGroupLegend.appendChild(item);
   });
 }
@@ -332,25 +414,22 @@ function hResetChannel() {
   hStartBtn.disabled = false;
   hResetNoiseBtn.disabled = true;
   hFlipCountEl.textContent = '0';
+  hCheckNoisyBitsEl.innerHTML = '';
   hCheckList.innerHTML = '';
   hSyndromeBox.hidden = true;
+  hFinalNoisyBitsEl.innerHTML = '';
   hFixedBitsEl.innerHTML = '';
   hResultBox.className = 'result-box';
   hResultBox.innerHTML = '<p class="result-status">送信スタートを押すと結果がここに表示されます</p>';
 }
 
 function hRenderChannel() {
-  hChannelBitsEl.innerHTML = '';
-  for (let pos = 1; pos <= h.n; pos++) {
-    const flipped = h.channelCode[pos] !== h.code[pos];
-    const cell = makeBitCell(h.channelCode[pos], { clickable: true, flipped });
-    cell.addEventListener('click', () => {
-      h.channelCode[pos] = h.channelCode[pos] === 1 ? 0 : 1;
-      hRenderChannel();
-      hEvaluate();
-    });
-    hChannelBitsEl.appendChild(cell);
-  }
+  renderEncodedRow(hChannelBitsEl, h.channelCode, {
+    compareCode: h.code,
+    clickable: true,
+    diffStyle: 'flip',
+    onClick: pos => { h.channelCode[pos] = h.channelCode[pos] === 1 ? 0 : 1; hRenderChannel(); hEvaluate(); },
+  });
   const flipCount = h.channelCode.reduce((acc, v, i) => i === 0 ? acc : acc + (v !== h.code[i] ? 1 : 0), 0);
   hFlipCountEl.textContent = flipCount;
   hResetNoiseBtn.disabled = flipCount === 0;
@@ -358,6 +437,9 @@ function hRenderChannel() {
 
 function hEvaluate() {
   const { flags, syndrome } = hCheckSyndrome(h.channelCode, h.parityPositions, h.n);
+
+  renderEncodedRow(hCheckNoisyBitsEl, h.channelCode, { compareCode: h.code, diffStyle: 'mismatch' });
+  renderEncodedRow(hFinalNoisyBitsEl, h.channelCode, { compareCode: h.code, diffStyle: 'mismatch' });
 
   hCheckList.innerHTML = '';
   flags.forEach(f => {
@@ -376,15 +458,14 @@ function hEvaluate() {
 
   if (syndrome === 0) {
     hSyndromeBox.hidden = true;
-    hFixedBitsEl.innerHTML = '';
-    h.channelCode.slice(1).forEach((v, i) => hFixedBitsEl.appendChild(makeBitCell(v, { parity: h.parityPositions.includes(i + 1) })));
+    renderEncodedRow(hFixedBitsEl, h.channelCode, { compareCode: h.code, diffStyle: 'mismatch' });
     hResultBox.className = 'result-box';
     if (actualFlips === 0) {
       hResultBox.classList.add('state-ok');
       hResultBox.innerHTML = '<p class="result-status">✅ 誤りなし、データ正常受信</p>';
     } else {
       hResultBox.classList.add('state-missed');
-      hResultBox.innerHTML = `<p class="result-status">❌ 誤り見逃し（${actualFlips} ビット同時反転）</p><p class="result-reason">複数ビットが特定の組み合わせで同時に反転すると、検査ビットの結果が偶然すべて一致してしまい、ハミング符号でも検出できないことがある。</p>`;
+      hResultBox.innerHTML = `<p class="result-status">❌ 誤り見逃し（${actualFlips} ビット同時反転）</p><p class="result-reason">複数ビットが特定の組み合わせで同時に反転すると、検査ビットの結果が偶然すべて一致してしまい、ハミング符号でも検出できないことがある。ハミング符号が確実に直せるのは、あくまで<strong>一度に1ビットだけ</strong>の誤りである。</p>`;
     }
     return;
   }
@@ -398,12 +479,7 @@ function hEvaluate() {
   const posValid = syndrome <= h.n;
   if (posValid) fixed[syndrome] = fixed[syndrome] === 1 ? 0 : 1;
 
-  hFixedBitsEl.innerHTML = '';
-  for (let pos = 1; pos <= h.n; pos++) {
-    const isParity = h.parityPositions.includes(pos);
-    const corrected = posValid && pos === syndrome;
-    hFixedBitsEl.appendChild(makeBitCell(fixed[pos], { parity: isParity, ok: corrected }));
-  }
+  renderEncodedRow(hFixedBitsEl, fixed, { compareCode: h.code, diffStyle: 'mismatch', correctedPos: posValid ? syndrome : null });
 
   const fixedData = h.dataPositions.map(pos => fixed[pos]);
   const matches = JSON.stringify(fixedData) === JSON.stringify(h.dataBits);
@@ -411,13 +487,13 @@ function hEvaluate() {
   hResultBox.className = 'result-box';
   if (actualFlips === 1) {
     hResultBox.classList.add('state-ok');
-    hResultBox.innerHTML = `<p class="result-status">✅ ${syndrome} 番目のビットの誤りを特定し、自動で訂正した</p><p class="result-reason">パリティ方式では検出しかできなかったが、ハミング符号では誤りの位置まで特定して直せる。</p>`;
+    hResultBox.innerHTML = `<p class="result-status">✅ ${syndrome} 番目のビットの誤りを特定し、自動で訂正した</p><p class="result-reason">パリティ方式では検出しかできなかったが、ハミング符号では誤りの位置まで特定して直せる。ただし直せるのは<strong>一度に1ビットだけ</strong>の誤りに限られる。</p>`;
   } else if (matches) {
     hResultBox.classList.add('state-detected');
-    hResultBox.innerHTML = `<p class="result-status">⚠️ ${actualFlips} ビット反転したが、偶然データは一致した</p><p class="result-reason">${syndrome} 番目を訂正した結果、たまたま元のデータと同じ値に戻った。</p>`;
+    hResultBox.innerHTML = `<p class="result-status">⚠️ ${actualFlips} ビット反転したが、偶然データは一致した</p><p class="result-reason">${syndrome} 番目を訂正した結果、たまたま元のデータと同じ値に戻った。ハミング符号が保証しているのは1ビット誤りの訂正だけで、これは偶然の一致にすぎない。</p>`;
   } else {
     hResultBox.classList.add('state-missed');
-    hResultBox.innerHTML = `<p class="result-status">❌ 誤った場所を「訂正」してしまった（${actualFlips} ビット同時反転）</p><p class="result-reason">ハミング符号は1ビットの誤りしか正しく訂正できない。2ビット以上が同時に反転すると、検査ビットの組み合わせが別の位置の誤りだと誤認識し、間違った場所を書き換えてしまう。</p>`;
+    hResultBox.innerHTML = `<p class="result-status">❌ 誤った場所を「訂正」してしまった（${actualFlips} ビット同時反転）</p><p class="result-reason"><strong>ハミング符号が一度に正しく訂正できるのは1ビットの誤りだけ</strong>。2ビット以上が同時に反転すると、検査ビットの組み合わせが別の位置の誤りだと誤認識し、間違った場所を書き換えてしまう。下の「修復した符号化データ」と「最初に送信した符号化データ」を見比べて確認してみよう。</p>`;
   }
 }
 
