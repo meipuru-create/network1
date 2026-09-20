@@ -1,1 +1,239 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>電信実験室 ― パリティとハミング符号</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Zen+Kaku+Gothic+New:wght@400;500;700;900&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="app">
 
+  <header class="app-header">
+    <div class="header-inner">
+      <p class="eyebrow-line"><span class="dot"></span>情報I ｜ 誤り制御シミュレータ</p>
+      <h1>電信実験室</h1>
+      <p class="subtitle">回線にノイズを流し、パリティチェックとハミング符号がどこまで誤りを見抜けるかを自分の手で確かめる。</p>
+    </div>
+    <nav class="mode-switch" role="tablist" aria-label="モード選択">
+      <button class="mode-btn is-active" data-mode="parity" role="tab" aria-selected="true">モードA ― パリティチェック</button>
+      <button class="mode-btn" data-mode="hamming" role="tab" aria-selected="false">モードB ― ハミング符号</button>
+    </nav>
+  </header>
+
+  <main>
+    <!-- ================= MODE A: PARITY ================= -->
+    <section id="parity-mode" class="mode-panel is-active" aria-hidden="false">
+
+      <article class="station" id="p-station-1">
+        <div class="station-head">
+          <span class="station-num">1</span>
+          <div>
+            <h2>送信データを作る</h2>
+            <p class="station-desc">ビットをタップして 0 と 1 を切り替え、パリティ方式を選ぶ。パリティビットは自動で計算される。</p>
+          </div>
+        </div>
+
+        <div class="control-row">
+          <label class="field">
+            <span>データのビット数</span>
+            <select id="p-bitcount">
+              <option value="2">2 ビット</option>
+              <option value="3">3 ビット</option>
+              <option value="4" selected>4 ビット</option>
+              <option value="5">5 ビット</option>
+              <option value="6">6 ビット</option>
+              <option value="7">7 ビット</option>
+            </select>
+          </label>
+          <fieldset class="field parity-choice">
+            <legend>パリティ方式</legend>
+            <label><input type="radio" name="p-parity" value="even" checked><span>偶数パリティ（1の数を偶数個に）</span></label>
+            <label><input type="radio" name="p-parity" value="odd"><span>奇数パリティ（1の数を奇数個に）</span></label>
+          </fieldset>
+        </div>
+
+        <div class="bits-block">
+          <p class="bits-caption">送信データ（タップして反転）</p>
+          <div class="bit-row" id="p-data-bits"></div>
+        </div>
+        <div class="assemble-arrow">↓ パリティビットを付加</div>
+        <div class="bits-block">
+          <p class="bits-caption">実際に送るデータ</p>
+          <div class="bit-row" id="p-full-bits"></div>
+        </div>
+      </article>
+
+      <article class="station" id="p-station-2">
+        <div class="station-head">
+          <span class="station-num">2</span>
+          <div>
+            <h2>通信回線を流す</h2>
+            <p class="station-desc">「通信スタート」でデータを送り出し、「ノイズを発生させる」で回線上のビットをわざと反転させる。</p>
+          </div>
+        </div>
+
+        <div class="channel-track">
+          <span class="node node-send">送信</span>
+          <div class="wire"><div class="wire-fill" id="p-wire-fill"></div></div>
+          <div class="channel-bits" id="p-channel-bits"></div>
+          <span class="node node-recv">受信</span>
+        </div>
+
+        <div class="control-row control-row-buttons">
+          <button class="btn btn-primary" id="p-start-btn">通信スタート</button>
+          <button class="btn btn-noise" id="p-noise-btn" disabled>ノイズを発生させる！</button>
+          <fieldset class="field noise-choice">
+            <legend>ノイズの起こし方</legend>
+            <label><input type="radio" name="p-noise-mode" value="random" checked><span>ランダムに1ビット反転</span></label>
+            <label><input type="radio" name="p-noise-mode" value="random2"><span>ランダムに2ビット反転</span></label>
+            <label><input type="radio" name="p-noise-mode" value="manual"><span>自分でビットを指定する（下の回線上のビットをクリック）</span></label>
+          </fieldset>
+        </div>
+        <p class="hint" id="p-noise-hint"></p>
+      </article>
+
+      <article class="station" id="p-station-3">
+        <div class="station-head">
+          <span class="station-num">3</span>
+          <div>
+            <h2>受信して判定する</h2>
+            <p class="station-desc">受信側がパリティチェックを行い、誤りを検出できたかどうかを表示する。</p>
+          </div>
+        </div>
+
+        <div class="bits-block">
+          <p class="bits-caption">受信データ</p>
+          <div class="bit-row" id="p-received-bits"></div>
+        </div>
+
+        <button class="btn btn-primary" id="p-judge-btn" disabled>受信して判定する</button>
+        <br><br>
+
+        <div class="result-box" id="p-result">
+          <p class="result-status">通信スタートを押すと結果がここに表示されます</p>
+        </div>
+
+        <div class="tradeoff-panel">
+          <div class="tradeoff-item">
+            <span class="tradeoff-label">通信効率（本来のデータの割合）</span>
+            <div class="tradeoff-bar"><div class="tradeoff-bar-fill" id="p-efficiency-bar"></div></div>
+            <span class="tradeoff-value" id="p-efficiency-value">--</span>
+          </div>
+          <div class="tradeoff-item">
+            <span class="tradeoff-label">仮想送信コスト（1ビット = 1円と仮定）</span>
+            <span class="tradeoff-value" id="p-cost-value">--</span>
+          </div>
+        </div>
+
+        <button class="btn btn-secondary" id="p-to-hamming" hidden>このデータでハミング符号を試す →</button>
+      </article>
+    </section>
+
+    <!-- ================= MODE B: HAMMING ================= -->
+    <section id="hamming-mode" class="mode-panel" aria-hidden="true">
+
+      <article class="station" id="h-station-1">
+        <div class="station-head">
+          <span class="station-num">1</span>
+          <div>
+            <h2>データと検査ビットの配置</h2>
+            <p class="station-desc">データビットをタップして決めると、検査ビット（パリティビット）の値と置き場所が自動で決まる。</p>
+          </div>
+        </div>
+
+        <div class="control-row">
+          <label class="field">
+            <span>データのビット数</span>
+            <select id="h-bitcount">
+              <option value="2">2 ビット</option>
+              <option value="3">3 ビット</option>
+              <option value="4" selected>4 ビット</option>
+              <option value="5">5 ビット</option>
+              <option value="6">6 ビット</option>
+              <option value="7">7 ビット</option>
+            </select>
+          </label>
+        </div>
+
+        <div class="bits-block">
+          <p class="bits-caption">データビット（タップして反転）</p>
+          <div class="bit-row" id="h-data-bits"></div>
+        </div>
+
+        <div class="bits-block">
+          <p class="bits-caption">符号化されたデータ（D = データビット / 色付き = 検査ビット）</p>
+          <div class="bit-row bit-row-code" id="h-code-bits"></div>
+        </div>
+
+        <div class="group-legend" id="h-group-legend"></div>
+      </article>
+
+      <article class="station" id="h-station-2">
+        <div class="station-head">
+          <span class="station-num">2</span>
+          <div>
+            <h2>通信回線でノイズを起こす</h2>
+            <p class="station-desc">「送信スタート」のあと、回線上のビットをクリックすると 1 か所を反転できる。2 か所反転させて限界も確認してみよう。</p>
+          </div>
+        </div>
+
+        <div class="channel-track">
+          <span class="node node-send">送信</span>
+          <div class="wire"><div class="wire-fill" id="h-wire-fill"></div></div>
+          <div class="channel-bits" id="h-channel-bits"></div>
+          <span class="node node-recv">受信</span>
+        </div>
+
+        <div class="control-row control-row-buttons">
+          <button class="btn btn-primary" id="h-start-btn">送信スタート</button>
+          <button class="btn btn-secondary" id="h-reset-noise-btn" disabled>ノイズをリセット</button>
+        </div>
+        <p class="hint">反転させたビット数：<span id="h-flip-count">0</span> 個</p>
+      </article>
+
+      <article class="station" id="h-station-3">
+        <div class="station-head">
+          <span class="station-num">3</span>
+          <div>
+            <h2>検査ビットでエラーを特定する</h2>
+            <p class="station-desc">それぞれの検査ビットが自分の担当グループを確認する。異常があれば赤く点滅する。</p>
+          </div>
+        </div>
+        <div class="check-list" id="h-check-list"></div>
+        <div class="syndrome-box" id="h-syndrome-box" hidden>
+          <p>フラグを並べると… <span class="syndrome-bin" id="h-syndrome-bin"></span>（2進数）</p>
+          <p>10進数に直すと <span class="syndrome-dec" id="h-syndrome-dec"></span> 番目のビットが怪しい</p>
+        </div>
+      </article>
+
+      <article class="station" id="h-station-4">
+        <div class="station-head">
+          <span class="station-num">4</span>
+          <div>
+            <h2>自動修復と結果</h2>
+            <p class="station-desc">特定した位置のビットを反転して修復する。2 か所同時に誤ると、ハミング符号でも間違った場所を直してしまうことがある。</p>
+          </div>
+        </div>
+        <div class="bits-block">
+          <p class="bits-caption">修復後のデータ</p>
+          <div class="bit-row bit-row-code" id="h-fixed-bits"></div>
+        </div>
+        <div class="result-box" id="h-result">
+          <p class="result-status">送信スタートを押すと結果がここに表示されます</p>
+        </div>
+      </article>
+    </section>
+  </main>
+
+  <footer class="app-footer">
+    <p>情報I「誤り検出符号（パリティ符号）」学習用シミュレータ</p>
+  </footer>
+</div>
+
+<script src="script.js"></script>
+</body>
+</html>
